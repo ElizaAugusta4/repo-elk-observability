@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java-inventory
+  namespace: lab
+  labels:
+    app: java-inventory
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: java-inventory
+  template:
+    metadata:
+      labels:
+        app: java-inventory
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+        - name: java-inventory
+          image: java-inventory:1.0
+          imagePullPolicy: Never   # imagem carregada com "kind load docker-image"
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres:5432/labdb
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom: { secretKeyRef: { name: postgres-secret, key: POSTGRES_USER } }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-secret, key: POSTGRES_PASSWORD } }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits:   { cpu: "1",  memory: 768Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-inventory
+  namespace: lab
+  labels:
+    app: java-inventory
+spec:
+  selector:
+    app: java-inventory
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

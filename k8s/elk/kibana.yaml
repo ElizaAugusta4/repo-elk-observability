@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: logging
+  labels:
+    app: kibana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: docker.elastic.co/kibana/kibana:8.15.3
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: http://elasticsearch.logging.svc.cluster.local:9200
+            - name: SERVER_PUBLICBASEURL
+              value: http://localhost:5601
+          ports:
+            - name: http
+              containerPort: 5601
+          readinessProbe:
+            httpGet: { path: /api/status, port: 5601 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 200m, memory: 700Mi }
+            limits:   { cpu: "1",  memory: 1280Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: logging
+spec:
+  selector:
+    app: kibana
+  ports:
+    - name: http
+      port: 5601
+      targetPort: 5601
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kibana-setup
+  namespace: logging
+spec:
+  backoffLimit: 5
+  activeDeadlineSeconds: 3600   
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: setup
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              KIBANA=http://kibana.logging.svc.cluster.local:5601
+              while true; do
+                CODE=$(curl -s -o /dev/null -w '%{http_code}' "$KIBANA/api/status")
+                [ "$CODE" = "200" ] && break
+                echo "Aguardando o Kibana ficar pronto... (HTTP $CODE)"; sleep 10
+              done
+              echo "Kibana pronto, criando a Data View..."
+              # Repete até o Kibana aceitar a criação (ele pode responder /api/status antes de estar 100% pronto)
+              until [ "$(curl -s -o /tmp/resp -w '%{http_code}' -X POST "$KIBANA/api/data_views/data_view" \
+                -H 'kbn-xsrf: true' -H 'Content-Type: application/json' \
+                -d '{"override": true, "data_view": {"id": "app-logs", "title": "app-logs-*", "name": "Logs das Aplicações", "timeFieldName": "@timestamp"}}')" = "200" ]; do
+                echo "Kibana ainda não aceitou a criação, tentando de novo em 10s. Resposta:"
+                cat /tmp/resp; echo
+                sleep 10
+              done
+              cat /tmp/resp; echo
+              echo "Data View criada!"

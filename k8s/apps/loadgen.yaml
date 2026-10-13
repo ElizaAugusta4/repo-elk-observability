@@ -1,0 +1,44 @@
+# Gera tráfego contínuo para que dashboards, logs e alertas tenham dados
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: lab
+  labels:
+    app: loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Gerador de carga iniciado"
+              URL=http://python-orders:8000
+              i=0
+              while true; do
+                i=$((i + 1))
+                P=$(( RANDOM % 4 + 1 ))
+                # ~5% dos pedidos usam um produto inexistente (gera 404)
+                if [ $(( RANDOM % 20 )) -eq 0 ]; then P=99; fi
+                Q=$(( RANDOM % 3 + 1 ))
+                curl -s -o /dev/null -X POST "$URL/orders" \
+                  -H 'Content-Type: application/json' \
+                  -d "{\"product_id\": $P, \"quantity\": $Q}"
+                curl -s -o /dev/null "$URL/products"
+                curl -s -o /dev/null "$URL/orders"
+                if [ $(( i % 100 )) -eq 0 ]; then echo "$i ciclos de carga enviados"; fi
+                sleep 2
+              done
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { cpu: 100m, memory: 64Mi }

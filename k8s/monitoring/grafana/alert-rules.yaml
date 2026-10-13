@@ -1,0 +1,258 @@
+# Regras de alerta provisionadas automaticamente no Grafana (Alerting > Alert rules)
+# Cada regra: A = consulta, B = reduz para 1 valor, C = condição (threshold)
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: lab-alertas
+    folder: Lab
+    interval: 30s
+    rules:
+      # ------------------------------------------------------------------
+      - uid: python-taxa-erro
+        title: "python-orders: taxa de erro acima de 5%"
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Mais de 5% das requisições do python-orders estão falhando (HTTP 5xx)"
+          description: "Taxa de erro atual: {{ humanize $values.B.Value }}%"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                (sum(rate(http_requests_total{app="python-orders", status=~"5.."}[1m])) or vector(0))
+                / sum(rate(http_requests_total{app="python-orders"}[1m])) * 100
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: { mode: dropNN }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+
+      # ------------------------------------------------------------------
+      - uid: python-latencia-alta
+        title: "python-orders: latência p95 acima de 500ms"
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "O p95 de latência do python-orders passou de 500ms"
+          description: "p95 atual: {{ humanize $values.B.Value }}s"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                histogram_quantile(0.95,
+                sum by (le) (rate(http_request_duration_seconds_bucket{app="python-orders"}[1m])))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: { mode: dropNN }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0.5] }
+
+      # ------------------------------------------------------------------
+      - uid: java-inventory-down
+        title: "java-inventory: serviço fora do ar"
+        condition: C
+        for: 30s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Nenhuma instância do java-inventory está respondendo"
+          description: "Instâncias UP: {{ $values.B.Value }}"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum(up{app="java-inventory"}) or vector(0)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # ------------------------------------------------------------------
+      - uid: postgres-down
+        title: "PostgreSQL: banco de dados fora do ar"
+        condition: C
+        for: 30s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+          team: dba
+        annotations:
+          summary: "O PostgreSQL não está respondendo"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(pg_up) or vector(0)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # ------------------------------------------------------------------
+      # Alerta multidimensional: dispara uma instância por produto
+      - uid: estoque-baixo
+        title: "Estoque baixo"
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: negocio
+        annotations:
+          summary: "Produto {{ $labels.product }} com estoque baixo"
+          description: "Restam apenas {{ $values.B.Value }} unidades de {{ $labels.product }}"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: min by (product) (inventory_stock)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [20] }
+
+      # ------------------------------------------------------------------
+      # Alerta baseado em LOGS (Elasticsearch / ELK)
+      - uid: logs-de-erro
+        title: "Muitos logs de ERRO nas aplicações"
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Mais de 10 logs de nível ERROR nos últimos 5 minutos"
+          description: "Total de erros: {{ $values.B.Value }} (veja os detalhes no Kibana)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: elasticsearch
+            model:
+              refId: A
+              query: "level:ERROR"
+              timeField: "@timestamp"
+              metrics:
+                - id: "1"
+                  type: count
+              bucketAggs:
+                - id: "2"
+                  type: date_histogram
+                  field: "@timestamp"
+                  settings:
+                    interval: 1m
+                    min_doc_count: "0"
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: sum
+              settings: { mode: replaceNN, replaceWithValue: 0 }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [10] }
