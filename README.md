@@ -260,22 +260,6 @@ kind delete cluster --name observability-lab   # (opcional) apaga o cluster
 
 ---
 
-## Roteiro sugerido para o vídeo
-
-1. **Abertura (1 min):** apresente o desenho da arquitetura e o objetivo: "uma aplicação real com observabilidade completa".
-2. **Código (3 min):** mostre o `app.py` (endpoint `/orders`, métricas e log JSON) e o `ProductController.java` (reserva atômica e métricas Micrometer).
-3. **Kubernetes (3 min):** mostre os manifests — Deployment, Service, probes, as annotations `prometheus.io/*` e o StatefulSet do banco com o sidecar exporter.
-4. **Deploy ao vivo (4 min):** rode os passos 1 a 8 e mostre `kubectl get pods -A` com tudo `Running`.
-5. **Testando a API (2 min):** Swagger em `localhost:8000/docs`, crie um pedido e consulte no banco.
-6. **Kibana (3 min):** Discover, filtros por `app` e `level`, abra um log do Java e um do Python mostrando os campos estruturados.
-7. **Grafana (3 min):** percorra o dashboard explicando cada painel e os dois datasources.
-8. **Alertas (5 min):** mostre as regras, configure o Discord ao vivo, rode `demo.sh errors-on` e `java-down`, mostre o alerta indo para Firing, a notificação chegando e os logs de erro no Kibana. Depois resolva e mostre o alerta voltando para Normal.
-9. **Encerramento (1 min):** recapitule e mostre o `teardown.sh`.
-
-Dica de gravação: rode o `setup.sh` uma vez **antes** de gravar para baixar todas as imagens. Assim, no vídeo, o deploy fica rápido.
-
----
-
 ## Troubleshooting
 
 | Sintoma | Causa provável / solução |
